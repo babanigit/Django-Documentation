@@ -1,3 +1,7 @@
+{% extends "base.html" %} 
+
+{% block title %} detail page {% endblock title%}
+
 {% block content %}
 
 <form action="{% url 'polls:vote' question.id %}" method="post">
