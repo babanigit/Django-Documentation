@@ -1,3 +1,23 @@
 li a {
-    color: green;
+  color: green;
+}
+body {
+  background: white url("images/background.jpg") no-repeat;
+
+  position: relative;
+  background-color: white; /* Fallback color */
+  overflow: hidden; /* Ensure no overflow */
+}
+
+body::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url("images/background.jpg") no-repeat center center;
+  background-size: cover; /* Adjust as necessary */
+  opacity: 0.9; /* Adjust opacity (0 to 1) */
+  z-index: -1; /* Place it behind the content */
 }
