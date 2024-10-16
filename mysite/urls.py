@@ -22,4 +22,5 @@ urlpatterns = [
     path("polls/", include("polls.urls")),
     path("admin/", admin.site.urls),
     path("myapp/", include("myapp.urls")),
+    path("wdrf/", include("withoutDRF.urls"))
 ]
