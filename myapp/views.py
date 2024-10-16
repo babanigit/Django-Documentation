@@ -1,80 +1,136 @@
-from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
-from django.shortcuts import render
-from rest_framework import status
+# using DRF
+from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.decorators import api_view, permission_classes
-from .serializers import UserSerializer
-from django.http import HttpResponse
-import logging
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view
+from rest_framework import status
+from .models import CustomUser
+from django.contrib.auth.hashers import check_password
+from rest_framework.exceptions import ValidationError
 
+class RegisterView(APIView):
+    def post(self, request):
+        data = request.data
+        username = data.get("username")
+        email = data.get("email")
+        password = data.get("password")
+        bio = data.get("bio", "")
 
-logger = logging.getLogger(__name__)
+        if not username or not email or not password:
+            return Response(
+                {"error": "All fields (username, email, password) are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
+        # Check for existing user with the same username or email
+        if CustomUser.objects.filter(username=username).exists():
+            return Response({"error": "Username already exists"}, status=status.HTTP_400_BAD_REQUEST)
+        if CustomUser.objects.filter(email=email).exists():
+            return Response({"error": "Email already exists"}, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(["POST"])
-def register(request):
-    logger.info("Register view called")
-    print("register view called")
-
-    serializer = UserSerializer(data=request.data)
-
-    if serializer.is_valid():
         try:
-            user = serializer.save()
-            logger.info(f"User {user.username} registered successfully")
+            user = CustomUser(username=username, email=email, bio=bio)
+            user.set_password(password)  # Hash the password before saving
+            user.save()
+            user.generate_token()  # Generate token on registration
+
             return Response({"username": user.username}, status=status.HTTP_201_CREATED)
         except Exception as e:
-            logger.error(f"Error saving user: {str(e)}")
             return Response(
-                {"error": "Error creating user"},
+                {"error": f"An error occurred during registration: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    logger.warning(f"Invalid registration data: {serializer.errors}")
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class LoginView(APIView):
+    def post(self, request):
+        data = request.data
+        username = data.get("username")
+        password = data.get("password")
+
+        if not username or not password:
+            return Response(
+                {"error": "Both username and password are required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = CustomUser.objects.get(username=username)
+
+            # Check if the entered password matches the hashed password
+            if check_password(password, user.password):
+                user.generate_token()  # Optionally generate a new token
+
+                response = Response(
+                    {
+                        "message": "Login successful",
+                        "username": user.username,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+                # Set the token in cookies
+                response.set_cookie(
+                    key="auth_token",
+                    value=user.token,
+                    httponly=True,  # Prevents JavaScript access to the cookie
+                    secure=False,  # Set to True if you're using HTTPS
+                    samesite="Lax",  # Prevents CSRF attacks to some extent
+                )
+
+                return response
+            else:
+                return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "User does not exist"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
-@api_view(["POST"])
-def login(request):
-    logger.info("Login view called")
-    print("login view called")
+class LogoutView(APIView):
+    def post(self, request):
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response(
+                {"error": "Authentication token not provided"}, status=status.HTTP_401_UNAUTHORIZED
+            )
 
-    username = request.data.get("username")
-    password = request.data.get("password")
+        try:
+            user = CustomUser.objects.get(token=token)
+            user.token = None  # Clear the token in the database
+            user.save()
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Invalid token, user not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response(
+                {"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-    if not username or not password:
-        logger.warning("Login attempt with missing credentials")
-        return Response(
-            {"error": "Both username and password are required"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    user = authenticate(username=username, password=password)
-
-    if user is not None:
-        logger.info(f"User {username} logged in successfully")
-        return Response({"username": user.username}, status=status.HTTP_200_OK)
-
-    logger.warning(f"Failed login attempt for user {username}")
-    return Response(
-        {"error": "Invalid Credentials"}, status=status.HTTP_401_UNAUTHORIZED
-    )
+        response = Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
+        response.delete_cookie("auth_token")  # Clear the token cookie
+        return response
 
 
-@api_view(["GET"])
-def default(request):
-    logger.info("Default view called")
-    return HttpResponse("Hello, this is the index page of myapp!")
+class TrialView(APIView):
+    def get(self, request):
+        # Get the token from the cookies
+        token = request.COOKIES.get("auth_token")
 
+        if not token:
+            return Response(
+                {"error": "Authentication required. Please login first."}, status=status.HTTP_401_UNAUTHORIZED
+            )
 
-@api_view(["GET"])
-@permission_classes(
-    [IsAuthenticated]
-)  # Require authentication to access the trial route
-def trial(request):
-    return Response(
-        {"message": "hello trail"},
-        status=status.HTTP_200_OK,
-    )
+        try:
+            user = CustomUser.objects.get(token=token)
+            return Response(
+                {"message": "Welcome to the protected trial page!"}, status=status.HTTP_200_OK
+            )
+        except CustomUser.DoesNotExist:
+            return Response(
+                {"error": "Invalid or expired token. Please login again."}, status=status.HTTP_401_UNAUTHORIZED
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

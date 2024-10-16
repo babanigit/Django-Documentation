@@ -5,14 +5,8 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path("", views.default, name="index"),  # root URL for /myapp
-    path("register/", views.register, name="register"),
-    path("login/", views.login, name="login"),
-    path("trial/", views.trial, name="trial"),  # Protected route
-
-    
-    # path("", views.default, name="index"),
-    # path("register/", views.register, name="register"),
-    # path("login/", views.login, name="login"),
-    # path("trial/", views.trial, name="trial"),  # Protected route
+    path("register/", views.RegisterView.as_view(), name="RegisterView"),
+    path("login/", views.LoginView.as_view(), name="login"),
+    path("logout/", views.LogoutView.as_view(), name="logout"),
+    path("trial/", views.TrialView.as_view(), name="trial"),  # Protected route
 ]
