@@ -43,7 +43,8 @@ INSTALLED_APPS = [
     "rest_framework",
     "myapp",
     "rest_framework_simplejwt",
-    'withoutDRF'
+    'withoutDRF',
+    'sessionbased',
 ]
 
 MIDDLEWARE = [

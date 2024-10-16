@@ -20,11 +20,10 @@ from django.urls import path, include
 
 
 urlpatterns = [
-    
     # path("", views.IndexView.as_view(), name="index"),
-
     path("polls/", include("polls.urls")),
     path("admin/", admin.site.urls),
     path("myapp/", include("myapp.urls")),
-    path("wdrf/", include("withoutDRF.urls"))
+    path("wdrf/", include("withoutDRF.urls")),
+    path("sb/", include("sessionbased.urls")),
 ]
