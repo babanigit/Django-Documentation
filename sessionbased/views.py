@@ -1,5 +1,3 @@
-from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
-from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
@@ -10,14 +8,21 @@ from django.contrib.auth.hashers import check_password
 @csrf_exempt
 def register(request):
     if request.method == "POST":
-        data = json.loads(request.body)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON data"}, status=400)
+
         username = data.get("username")
         email = data.get("email")
         password = data.get("password")
         bio = data.get("bio", "")
 
         if not username or not email or not password:
-            return JsonResponse({"error": "All fields are required"}, status=400)
+            return JsonResponse(
+                {"error": "All fields (username, email, password) are required"},
+                status=400,
+            )
 
         # Check for existing user with the same username or email
         if CustomUser.objects.filter(username=username).exists():
@@ -33,7 +38,10 @@ def register(request):
 
             return JsonResponse({"username": user.username}, status=201)
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)
+            return JsonResponse(
+                {"error": f"An error occurred during registration: {str(e)}"},
+                status=500,
+            )
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -41,7 +49,11 @@ def register(request):
 @csrf_exempt
 def login(request):
     if request.method == "POST":
-        data = json.loads(request.body)
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON data"}, status=400)
+
         username = data.get("username")
         password = data.get("password")
 
@@ -80,18 +92,40 @@ def login(request):
                 return JsonResponse({"error": "Invalid credentials"}, status=401)
         except CustomUser.DoesNotExist:
             return JsonResponse({"error": "User does not exist"}, status=404)
+        except Exception as e:
+            return JsonResponse(
+                {"error": f"An unexpected error occurred: {str(e)}"}, status=500
+            )
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
-# Logout View
 @csrf_exempt
 def logout(request):
     if request.method == "POST":
-        auth_logout(request)
-        return JsonResponse({"message": "Logout successful"}, status=200)
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return JsonResponse(
+                {"error": "Authentication token not provided"}, status=401
+            )
+
+        try:
+            user = CustomUser.objects.get(token=token)
+            user.token = None  # Clear the token in the database
+            user.save()
+        except CustomUser.DoesNotExist:
+            return JsonResponse({"error": "Invalid token, user not found"}, status=404)
+        except Exception as e:
+            return JsonResponse(
+                {"error": f"An unexpected error occurred: {str(e)}"}, status=500
+            )
+
+        response = JsonResponse({"message": "Logout successful"}, status=200)
+        response.delete_cookie("auth_token")  # Clear the token cookie
+        return response
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
 
 @csrf_exempt
 def trial(request):
@@ -100,15 +134,22 @@ def trial(request):
         token = request.COOKIES.get("auth_token")
 
         if not token:
-            return JsonResponse({"error": "Authentication required"}, status=401)
+            return JsonResponse(
+                {"error": "Authentication required. Please login first."}, status=401
+            )
 
         try:
             user = CustomUser.objects.get(token=token)
-            if user:
-                return JsonResponse(
-                    {"message": "Welcome to the protected trial page!"}, status=200
-                )
+            return JsonResponse(
+                {"message": "Welcome to the protected trial page!"}, status=200
+            )
         except CustomUser.DoesNotExist:
-            return JsonResponse({"error": "Invalid token"}, status=401)
+            return JsonResponse(
+                {"error": "Invalid or expired token. Please login again."}, status=401
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"error": f"An unexpected error occurred: {str(e)}"}, status=500
+            )
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
