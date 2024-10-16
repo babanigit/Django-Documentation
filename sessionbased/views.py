@@ -93,14 +93,22 @@ def logout(request):
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
-
-# Protected Trial View (Session-based)
-@login_required  # Ensures the user must be logged in
+@csrf_exempt
 def trial(request):
     if request.method == "GET":
-        return JsonResponse(
-            {"message": "Welcome to the protected trial page!"}, status=200
-        )
+        # Get the token from the cookies
+        token = request.COOKIES.get("auth_token")
+
+        if not token:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+
+        try:
+            user = CustomUser.objects.get(token=token)
+            if user:
+                return JsonResponse(
+                    {"message": "Welcome to the protected trial page!"}, status=200
+                )
+        except CustomUser.DoesNotExist:
+            return JsonResponse({"error": "Invalid token"}, status=401)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
-
