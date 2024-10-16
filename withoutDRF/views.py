@@ -20,11 +20,19 @@ def register(request):
         if not username or not email or not password:
             return JsonResponse({"error": "All fields are required"}, status=400)
 
+        # Check for existing user with the same username or email
+        if CustomUser.objects.filter(username=username).exists():
+            return JsonResponse({"error": "Username already exists"}, status=400)
+        if CustomUser.objects.filter(email=email).exists():
+            return JsonResponse({"error": "Email already exists"}, status=400)
+
         try:
             user = CustomUser(
                 username=username, email=email, password=password, bio=bio
             )
             user.save()
+            user.generate_token()  # Generate token on registration
+
             return JsonResponse({"username": user.username}, status=201)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
@@ -50,8 +58,15 @@ def login(request):
             if (
                 user.password == password
             ):  # In a real app, never store passwords in plaintext!
+
+                user.generate_token()
+
                 return JsonResponse(
-                    {"message": "Login successful", "username": user.username},
+                    {
+                        "message": "Login successful",
+                        "username": user.username,
+                        "token": user.token,
+                    },
                     status=200,
                 )
             else:
@@ -62,7 +77,25 @@ def login(request):
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
-# Protected Trial View
-@login_required  # This decorator ensures the user must be logged in
+@csrf_exempt
 def trial(request):
-    return JsonResponse({"message": "Welcome to the protected trial page!"})
+    if request.method == "GET":
+        token = request.META.get("HTTP_AUTHORIZATION")
+
+        # Check if token is present
+        if not token:
+            return JsonResponse({"error": "No token provided"}, status=401)
+
+        try:
+            # Assuming the token is passed as "Token <token_value>"
+            token_value = token.split()[1]
+            user = CustomUser.objects.get(token=token_value)
+
+            if user:
+                return JsonResponse(
+                    {"message": "Welcome to the protected trial page!"}, status=200
+                )
+        except (CustomUser.DoesNotExist, IndexError):
+            return JsonResponse({"error": "Invalid token"}, status=401)
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
